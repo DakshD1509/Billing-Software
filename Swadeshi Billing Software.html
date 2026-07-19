@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Swadeshi Enterprises Billing</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- html2pdf.js for PDF Generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <style>
+        /* Thermal Receipt Print Styles */
+        .receipt-wrapper {
+            width: 78mm; /* standard 80mm roll, leaving 2mm margin */
+            margin: 0 auto;
+            padding: 2mm;
+            box-sizing: border-box;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 14px; /* Increased for better clarity/quality */
+            font-weight: 600; /* Bold makes text crispier on thermal prints and PDFs */
+            color: black;
+            background: white;
+            line-height: 1.25;
+        }
+
+        .receipt-wrapper .company-name {
+            font-size: 16px;
+            font-weight: bold;
+            margin: 0 0 4px 0;
+        }
+
+        .receipt-wrapper p {
+            margin: 2px 0;
+        }
+
+        .receipt-wrapper .divider {
+            border-bottom: 2px dashed black; /* Actual CSS dashed line, fits container perfectly */
+            margin: 8px 0;
+        }
+
+        .receipt-wrapper .info-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 2px 0;
+        }
+
+        .receipt-wrapper .customer-row {
+            justify-content: flex-start;
+        }
+
+        .receipt-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .receipt-table th {
+            text-align: left;
+            border-bottom: 1px dashed black;
+            padding-bottom: 4px;
+        }
+
+        .receipt-table td {
+            padding: 4px 0;
+            vertical-align: top;
+        }
+
+        .receipt-table .col-sno { width: 10%; }
+        .receipt-table .col-item { width: 50%; padding-right: 4px; word-break: break-all; }
+        .receipt-table .col-qty { width: 15%; text-align: center; }
+        .receipt-table .col-amt { width: 25%; text-align: right; }
+
+        .receipt-wrapper .total-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 14px;
+            font-weight: bold;
+            margin: 4px 0;
+        }
+
+        .receipt-wrapper .footer {
+            text-align: center;
+            font-weight: bold;
+            margin-top: 10px;
+        }
+
+        /* Specific logic for when printing from browser */
+        @media print {
+            body {
+                background: white;
+                margin: 0;
+                padding: 0;
+            }
+            
+            .no-print {
+                display: none !important;
+            }
+
+            #thermalReceiptContainer {
+                display: block !important;
+                position: absolute;
+                left: 0;
+                top: 0;
+            }
+            
+            @page {
+                margin: 0;
+                size: 80mm 297mm; /* 80mm standard width */
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800 font-sans h-screen flex flex-col">
+
+    <!-- Navbar -->
+    <header class="bg-blue-600 text-white p-4 shadow-md flex justify-between items-center no-print">
+        <h1 class="text-2xl font-bold">Swadeshi Enterprises Billing</h1>
+        <div class="text-sm">Keyboard Shortcuts: <span class="bg-blue-700 px-2 py-1 rounded">Ctrl+S</span> PDF | <span class="bg-blue-700 px-2 py-1 rounded">Ctrl+P</span> Print | <span class="bg-blue-700 px-2 py-1 rounded">Ctrl+N</span> Clear Bill</div>
+    </header>
+
+    <main class="flex-grow flex p-6 gap-6 no-print overflow-hidden">
+        
+        <!-- Left Column: Inputs & Controls -->
+        <section class="w-1/3 bg-white p-6 rounded-lg shadow-md flex flex-col gap-4 overflow-y-auto">
+            <h2 class="text-xl font-semibold mb-2 border-b pb-2">New Bill</h2>
+            
+            <div class="flex gap-4">
+                <div class="flex flex-col gap-1 flex-grow">
+                    <label for="customerName" class="font-medium text-sm text-gray-600">Customer Name</label>
+                    <input type="text" id="customerName" class="border rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Enter customer name..." autofocus>
+                </div>
+                <div class="flex flex-col gap-1 w-20">
+                    <label for="discountPct" class="font-medium text-sm text-gray-600">Disc (%)</label>
+                    <input type="number" id="discountPct" class="border rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none" min="0" max="100" value="0">
+                </div>
+                <div class="flex flex-col gap-1 w-20">
+                    <label for="gstPct" class="font-medium text-sm text-gray-600">GST (%)</label>
+                    <input type="number" id="gstPct" class="border rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none" min="0" max="100" value="0">
+                </div>
+            </div>
+
+            <div class="flex flex-col gap-1 relative">
+                <label for="productSearch" class="font-medium text-sm text-gray-600">Product Search</label>
+                <input type="text" id="productSearch" class="border rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Search product..." autocomplete="off">
+                
+                <!-- Autocomplete Dropdown -->
+                <ul id="autocompleteResults" class="absolute top-full left-0 w-full bg-white border border-gray-200 shadow-lg rounded-b z-10 hidden max-h-48 overflow-y-auto">
+                    <!-- populated by JS -->
+                </ul>
+            </div>
+
+            <div class="flex gap-4">
+                <div class="flex flex-col gap-1 w-1/2">
+                    <label class="font-medium text-sm text-gray-600">Price (₹)</label>
+                    <input type="number" id="productPrice" class="border rounded p-2 bg-gray-100 cursor-not-allowed" readonly placeholder="0">
+                </div>
+                <div class="flex flex-col gap-1 w-1/2">
+                    <label for="productQty" class="font-medium text-sm text-gray-600">Quantity</label>
+                    <input type="number" id="productQty" class="border rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none" min="1" value="1">
+                </div>
+            </div>
+
+            <button id="addItemBtn" class="bg-blue-600 text-white font-semibold py-2 rounded hover:bg-blue-700 transition">Add Item (Enter)</button>
+
+            <div class="mt-auto flex flex-col gap-3 pt-6 border-t border-gray-200">
+                <button id="downloadPdfBtn" class="bg-green-600 text-white font-semibold py-2 rounded hover:bg-green-700 transition flex items-center justify-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                    Download PDF
+                </button>
+                <button id="printBillBtn" class="bg-indigo-600 text-white font-semibold py-2 rounded hover:bg-indigo-700 transition flex items-center justify-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
+                    Print Bill
+                </button>
+                <button id="clearBillBtn" class="bg-red-500 text-white font-semibold py-2 rounded hover:bg-red-600 transition flex items-center justify-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                    Clear Bill
+                </button>
+            </div>
+            
+            <div id="statusMessage" class="text-center font-medium text-sm h-5 hidden"></div>
+        </section>
+
+        <!-- Right Column: Current Bill Table -->
+        <section class="w-2/3 bg-white rounded-lg shadow-md flex flex-col overflow-hidden">
+            <div class="p-4 border-b bg-gray-50 flex justify-between items-center">
+                <h2 class="text-xl font-semibold">Current Bill Items</h2>
+                <div class="text-gray-500 font-medium text-sm">Invoice #<span id="displayInvoiceNo">...</span></div>
+            </div>
+            
+            <div class="flex-grow overflow-auto p-4">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="bg-gray-100 text-gray-700 text-sm border-b-2 border-gray-300">
+                            <th class="p-3 w-12 text-center">S.No.</th>
+                            <th class="p-3">Item Name</th>
+                            <th class="p-3 w-24 text-right">Price</th>
+                            <th class="p-3 w-32 text-center">Quantity</th>
+                            <th class="p-3 w-28 text-right">Amount</th>
+                            <th class="p-3 w-16 text-center">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="billTableBody">
+                        <!-- Populated by JS -->
+                        <tr>
+                            <td colspan="6" class="text-center p-8 text-gray-400 italic">No items added yet.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="p-4 border-t bg-gray-50 flex flex-col items-end gap-1">
+                <div class="text-lg font-medium flex gap-4 text-gray-600">
+                    <span>Total:</span>
+                    <span>₹<span id="subTotal">0</span></span>
+                </div>
+                <div class="text-lg font-medium flex gap-4 text-red-500">
+                    <span>Discount:</span>
+                    <span>-₹<span id="discountAmt">0</span></span>
+                </div>
+                <div class="text-lg font-medium flex gap-4 text-gray-600">
+                    <span>GST:</span>
+                    <span>+₹<span id="gstAmt">0</span></span>
+                </div>
+                <div class="text-2xl font-bold flex gap-4 mt-2 border-t border-gray-200 pt-2">
+                    <span class="text-gray-700">Grand Total:</span>
+                    <span class="text-blue-600">₹<span id="grandTotal">0</span></span>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Hidden Thermal Receipt Template (For Printing & PDF) -->
+    <div id="thermalReceiptContainer" class="hidden">
+        <div id="receiptTemplate" class="receipt-wrapper">
+            <div class="text-center">
+                <h1 class="company-name">SWADESHI ENTERPRISES</h1>
+                <p class="address">Gali No 10<br>Sandeep Garden<br>Near Nimki Mata Mandir<br>Akbarpur Behrampur<br>Vijaynagar, Ghaziabad</p>
+                <p class="phone">WhatsApp No.: +91 9355122252</p>
+                <p class="gstin">GSTIN: 09AHBPD5297J1Z3</p>
+            </div>
+            
+            <div class="divider"></div>
+            
+            <div class="info-row">
+                <span>Invoice: <span id="receiptInvoiceNo">...</span></span>
+                <span id="receiptDate">...</span>
+            </div>
+            <div class="info-row customer-row">
+                <span>Customer: <span id="receiptCustomerName">...</span></span>
+            </div>
+            
+            <div class="divider"></div>
+            
+            <table class="receipt-table">
+                <thead>
+                    <tr>
+                        <th class="col-sno">#</th>
+                        <th class="col-item">Item</th>
+                        <th class="col-qty">Qty</th>
+                        <th class="col-amt">Amt</th>
+                    </tr>
+                </thead>
+                <tbody id="receiptTableBody">
+                    <!-- Populated by JS -->
+                </tbody>
+            </table>
+            
+            <div class="divider"></div>
+            
+            <div class="total-row">
+                <span>TOTAL</span>
+                <span>₹<span id="receiptSubTotal">0</span></span>
+            </div>
+            <div class="info-row" style="font-size: 14px; font-weight: bold;">
+                <span>DISCOUNT (<span id="receiptDiscountPctVal">0</span>%)</span>
+                <span>-₹<span id="receiptDiscountAmt">0</span></span>
+            </div>
+            <div class="info-row" style="font-size: 14px; font-weight: bold;">
+                <span>GST (<span id="receiptGstPctVal">0</span>%)</span>
+                <span>+₹<span id="receiptGstAmt">0</span></span>
+            </div>
+            <div class="total-row">
+                <span>GRAND TOTAL</span>
+                <span>₹<span id="receiptGrandTotal">0</span></span>
+            </div>
+            
+            <div class="divider"></div>
+            
+            <div class="footer">
+                <p>THANK YOU</p>
+                <p>Visit Again</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // State
+        let inventory = [
+            { "id": 1, "name": "Dew Drop Hand Wash Gel (500ml)", "price": 119 },
+            { "id": 2, "name": "Hand Wash Gel (250ml)", "price": 59 },
+            { "id": 3, "name": "Dew Drop Dishes Wash Gel (500ml)", "price": 120 },
+            { "id": 4, "name": "Dew Drop Dishes Wash Gel (250ml)", "price": 59 },
+            { "id": 5, "name": "Dew Drop Clothes Wash Gel (1000ml)", "price": 250 },
+            { "id": 6, "name": "Dew Drop Toilet Cleaner Liquid (500ml)", "price": 110 },
+            { "id": 7, "name": "Dew Drop Floor Cleaner Liquid (1000ml)", "price": 86 },
+            { "id": 8, "name": "Dew Drop Surf Detergent Powder (1kg)", "price": 105 },
+            { "id": 9, "name": "Dew Drop Surf Detergent Powder (500g)", "price": 55 }
+        ];
+
+        let currentBill = [];
+        let selectedProduct = null;
+        let currentInvoiceNo = null; // What will be used for display
+
+        // DOM Elements
+        const customerNameEl = document.getElementById('customerName');
+        const productSearchEl = document.getElementById('productSearch');
+        const autocompleteResultsEl = document.getElementById('autocompleteResults');
+        const productPriceEl = document.getElementById('productPrice');
+        const productQtyEl = document.getElementById('productQty');
+        const addItemBtn = document.getElementById('addItemBtn');
+        const billTableBody = document.getElementById('billTableBody');
+        
+        const discountPctEl = document.getElementById('discountPct');
+        const gstPctEl = document.getElementById('gstPct');
+        const subTotalEl = document.getElementById('subTotal');
+        const discountAmtEl = document.getElementById('discountAmt');
+        const gstAmtEl = document.getElementById('gstAmt');
+        const grandTotalEl = document.getElementById('grandTotal');
+        const displayInvoiceNo = document.getElementById('displayInvoiceNo');
+
+        const receiptInvoiceNo = document.getElementById('receiptInvoiceNo');
+        const receiptDate = document.getElementById('receiptDate');
+        const receiptCustomerName = document.getElementById('receiptCustomerName');
+        const receiptTableBody = document.getElementById('receiptTableBody');
+        
+        const receiptSubTotal = document.getElementById('receiptSubTotal');
+        const receiptDiscountPctVal = document.getElementById('receiptDiscountPctVal');
+        const receiptDiscountAmt = document.getElementById('receiptDiscountAmt');
+        const receiptGstPctVal = document.getElementById('receiptGstPctVal');
+        const receiptGstAmt = document.getElementById('receiptGstAmt');
+        const receiptGrandTotal = document.getElementById('receiptGrandTotal');
+        const thermalReceiptContainer = document.getElementById('thermalReceiptContainer');
+        const statusMessage = document.getElementById('statusMessage');
+
+        // Autocomplete State
+        let activeSuggestionIndex = -1;
+        let filteredInventory = [];
+
+        // Initialize (Using localStorage instead of backend)
+        function init() {
+            try {
+                let savedInvoice = localStorage.getItem('lastInvoice');
+                if (!savedInvoice) {
+                    savedInvoice = 0;
+                } else {
+                    savedInvoice = parseInt(savedInvoice, 10);
+                }
+                currentInvoiceNo = savedInvoice + 1;
+                displayInvoiceNo.innerText = currentInvoiceNo;
+            } catch (err) {
+                showStatus('Error loading initial data', 'red');
+                console.error(err);
+            }
+        }
+
+        // Utility: Show Status
+        function showStatus(msg, color = 'green') {
+            statusMessage.innerText = msg;
+            statusMessage.style.color = color;
+            statusMessage.classList.remove('hidden');
+            setTimeout(() => {
+                statusMessage.classList.add('hidden');
+            }, 3000);
+        }
+
+        discountPctEl.addEventListener('input', updateBillUI);
+        gstPctEl.addEventListener('input', updateBillUI);
+
+        // Autocomplete Logic
+        productSearchEl.addEventListener('input', (e) => {
+            const val = e.target.value.toLowerCase();
+            activeSuggestionIndex = -1;
+            
+            if (!val) {
+                autocompleteResultsEl.classList.add('hidden');
+                selectedProduct = null;
+                productPriceEl.value = '';
+                return;
+            }
+
+            filteredInventory = inventory.filter(p => p.name.toLowerCase().includes(val));
+            
+            if (filteredInventory.length === 0) {
+                autocompleteResultsEl.classList.add('hidden');
+                return;
+            }
+
+            renderAutocomplete();
+        });
+
+        function renderAutocomplete() {
+            autocompleteResultsEl.innerHTML = '';
+            filteredInventory.forEach((item, index) => {
+                const li = document.createElement('li');
+                li.className = `p-2 cursor-pointer hover:bg-blue-50 ${index === activeSuggestionIndex ? 'bg-blue-100' : ''}`;
+                li.innerText = `${item.name} - ₹${item.price}`;
+                li.addEventListener('mousedown', () => selectProduct(item)); // mousedown fires before blur
+                autocompleteResultsEl.appendChild(li);
+            });
+            autocompleteResultsEl.classList.remove('hidden');
+        }
+
+        function selectProduct(item) {
+            selectedProduct = item;
+            productSearchEl.value = item.name;
+            productPriceEl.value = item.price;
+            autocompleteResultsEl.classList.add('hidden');
+            // Focus quantity
+            productQtyEl.focus();
+        }
+
+        // Keyboard Navigation for Workflow
+        productSearchEl.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                if (activeSuggestionIndex < filteredInventory.length - 1) activeSuggestionIndex++;
+                renderAutocomplete();
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                if (activeSuggestionIndex > 0) activeSuggestionIndex--;
+                renderAutocomplete();
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                if (activeSuggestionIndex > -1 && filteredInventory.length > 0) {
+                    selectProduct(filteredInventory[activeSuggestionIndex]);
+                } else if (filteredInventory.length > 0 && !selectedProduct) {
+                    selectProduct(filteredInventory[0]);
+                }
+            } else if (e.key === 'Escape') {
+                clearSearch();
+            }
+        });
+
+        productSearchEl.addEventListener('blur', () => {
+            setTimeout(() => { autocompleteResultsEl.classList.add('hidden'); }, 100);
+        });
+
+        productQtyEl.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                addItem();
+            }
+        });
+
+        function clearSearch() {
+            productSearchEl.value = '';
+            productPriceEl.value = '';
+            selectedProduct = null;
+            autocompleteResultsEl.classList.add('hidden');
+            productSearchEl.focus();
+        }
+
+        // Add Item to Bill
+        function addItem() {
+            if (!selectedProduct) {
+                showStatus('Select a product first', 'red');
+                return;
+            }
+            
+            const qty = parseInt(productQtyEl.value);
+            if (isNaN(qty) || qty <= 0) {
+                showStatus('Invalid quantity', 'red');
+                return;
+            }
+
+            const existingIndex = currentBill.findIndex(item => item.id === selectedProduct.id);
+            
+            if (existingIndex > -1) {
+                currentBill[existingIndex].qty += qty;
+            } else {
+                currentBill.push({
+                    id: selectedProduct.id,
+                    name: selectedProduct.name,
+                    price: selectedProduct.price,
+                    qty: qty
+                });
+            }
+
+            updateBillUI();
+            clearSearch();
+        }
+
+        addItemBtn.addEventListener('click', addItem);
+
+        // Delete Item
+        function deleteItem(id) {
+            currentBill = currentBill.filter(item => item.id !== id);
+            updateBillUI();
+        }
+
+        // Edit Qty
+        function editQty(id, newQty) {
+            const qty = parseInt(newQty);
+            if (isNaN(qty) || qty <= 0) return;
+            
+            const item = currentBill.find(i => i.id === id);
+            if (item) {
+                item.qty = qty;
+                updateBillUI();
+            }
+        }
+
+        // Update UI
+        function updateBillUI() {
+            billTableBody.innerHTML = '';
+            receiptTableBody.innerHTML = '';
+            
+            if (currentBill.length === 0) {
+                billTableBody.innerHTML = `<tr><td colspan="6" class="text-center p-8 text-gray-400 italic">No items added yet.</td></tr>`;
+                subTotalEl.innerText = '0';
+                discountAmtEl.innerText = '0';
+                gstAmtEl.innerText = '0';
+                grandTotalEl.innerText = '0';
+                receiptSubTotal.innerText = '0';
+                receiptDiscountAmt.innerText = '0';
+                receiptGstAmt.innerText = '0';
+                receiptGrandTotal.innerText = '0';
+                return;
+            }
+
+            let total = 0;
+            
+            currentBill.forEach((item, index) => {
+                const amount = item.price * item.qty;
+                total += amount;
+                
+                // Main UI Table
+                const tr = document.createElement('tr');
+                tr.className = 'border-b';
+                tr.innerHTML = `
+                    <td class="p-3 text-center">${index + 1}</td>
+                    <td class="p-3">${item.name}</td>
+                    <td class="p-3 text-right">₹${item.price}</td>
+                    <td class="p-3 text-center">
+                        <input type="number" class="w-16 border rounded text-center outline-none" min="1" value="${item.qty}" onchange="editQty(${item.id}, this.value)">
+                    </td>
+                    <td class="p-3 text-right font-medium">₹${amount}</td>
+                    <td class="p-3 text-center">
+                        <button onclick="deleteItem(${item.id})" class="text-red-500 hover:text-red-700 font-bold" title="Delete">X</button>
+                    </td>
+                `;
+                billTableBody.appendChild(tr);
+
+                // Receipt Table
+                const rTr = document.createElement('tr');
+                rTr.innerHTML = `
+                    <td class="col-sno">${index + 1}</td>
+                    <td class="col-item">${item.name}</td>
+                    <td class="col-qty">${item.qty}</td>
+                    <td class="col-amt">${amount}</td>
+                `;
+                receiptTableBody.appendChild(rTr);
+            });
+
+            const discountPct = parseFloat(discountPctEl.value) || 0;
+            const gstPct = parseFloat(gstPctEl.value) || 0;
+            
+            const discountAmount = Math.round((total * discountPct) / 100);
+            const taxableAmount = total - discountAmount;
+            const gstAmount = Math.round((taxableAmount * gstPct) / 100);
+            const grandTotal = taxableAmount + gstAmount;
+
+            subTotalEl.innerText = total;
+            discountAmtEl.innerText = discountAmount;
+            gstAmtEl.innerText = gstAmount;
+            grandTotalEl.innerText = grandTotal;
+            
+            receiptSubTotal.innerText = total;
+            receiptDiscountPctVal.innerText = discountPct;
+            receiptDiscountAmt.innerText = discountAmount;
+            receiptGstPctVal.innerText = gstPct;
+            receiptGstAmt.innerText = gstAmount;
+            receiptGrandTotal.innerText = grandTotal;
+        }
+
+        // Prepare Receipt Data
+        function prepareReceipt() {
+            const cName = customerNameEl.value.trim();
+            if (!cName) {
+                showStatus('Customer Name is required!', 'red');
+                customerNameEl.focus();
+                return false;
+            }
+            if (currentBill.length === 0) {
+                showStatus('Add at least one item to bill!', 'red');
+                return false;
+            }
+
+            receiptCustomerName.innerText = cName;
+            receiptDate.innerText = new Date().toLocaleDateString('en-GB');
+            receiptInvoiceNo.innerText = currentInvoiceNo;
+            return true;
+        }
+
+        // Save Invoice (to localStorage)
+        function saveInvoice() {
+            if (!prepareReceipt()) return false;
+            
+            try {
+                // Save the current invoice number as the "last" one used
+                localStorage.setItem('lastInvoice', currentInvoiceNo);
+                return true;
+            } catch (err) {
+                console.error('Failed to save invoice', err);
+                showStatus('Failed to save invoice to localStorage.', 'red');
+            }
+            return false;
+        }
+
+        // PDF Generation
+        document.getElementById('downloadPdfBtn').addEventListener('click', () => {
+            if (!saveInvoice()) return;
+            
+            thermalReceiptContainer.classList.remove('hidden');
+            thermalReceiptContainer.style.display = 'block'; // Ensure it's block for library rendering
+            
+            const element = document.getElementById('receiptTemplate');
+            const cName = customerNameEl.value.trim().replace(/\s+/g, '_');
+            const invNo = receiptInvoiceNo.innerText;
+            
+            const opt = {
+                margin:       0,
+                filename:     `${cName}_${invNo}.pdf`,
+                image:        { type: 'jpeg', quality: 1.0 },
+                html2canvas:  { scale: 5, useCORS: true, logging: false }, // Scale 5 for ultra crisp text
+                jsPDF:        { unit: 'mm', format: [80, 297], orientation: 'portrait' } // 80mm standard format
+            };
+
+            html2pdf().set(opt).from(element).save().then(() => {
+                thermalReceiptContainer.classList.add('hidden');
+                thermalReceiptContainer.style.display = '';
+                showStatus('PDF Downloaded!');
+            });
+        });
+
+        // Print Bill
+        document.getElementById('printBillBtn').addEventListener('click', () => {
+            if (!saveInvoice()) return;
+            showStatus('Opening print dialog...');
+            window.print();
+        });
+
+        // Clear Bill
+        document.getElementById('clearBillBtn').addEventListener('click', clearBill);
+
+        function clearBill() {
+            currentBill = [];
+            discountPctEl.value = '0';
+            gstPctEl.value = '0';
+            
+            // If the current invoice was actually saved (printed/downloaded), advance the number for the next bill.
+            // Otherwise, keep the same number since this bill was just discarded without saving.
+            if (localStorage.getItem('lastInvoice') == currentInvoiceNo) {
+                currentInvoiceNo++;
+                displayInvoiceNo.innerText = currentInvoiceNo;
+            }
+            
+            customerNameEl.value = ''; // Clear customer name for new bill
+            
+            updateBillUI();
+            clearSearch();
+            showStatus('Bill Cleared');
+        }
+
+        // Global Shortcuts
+        window.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.key === 's') {
+                e.preventDefault();
+                document.getElementById('downloadPdfBtn').click();
+            } else if (e.ctrlKey && e.key === 'p') {
+                e.preventDefault();
+                document.getElementById('printBillBtn').click();
+            } else if (e.ctrlKey && e.key === 'n') {
+                e.preventDefault();
+                document.getElementById('clearBillBtn').click();
+            }
+        });
+
+        // Start
+        init();
+    </script>
+</body>
+</html>
